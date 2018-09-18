@@ -6,11 +6,11 @@ implementation of a means of getting events to a logstash cluster.
 
 It's a gem:
 
-    gem install gemplate
+    gem install logstash_writer
 
 There's also the wonders of [the Gemfile](http://bundler.io):
 
-    gem 'gemplate'
+    gem 'logstash_writer'
 
 If you're the sturdy type that likes to run from git:
 
@@ -40,6 +40,10 @@ as that is fixed, we are stuck with the `json_lines` approach.
 
 
 # Usage
+
+Start by including the necessary files:
+
+    require 'logstash_writer'
 
 An instance of `LogstashWriter` needs to be given the location of a server
 (or servers) to send the events to.  This can be any of:
