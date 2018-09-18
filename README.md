@@ -121,7 +121,7 @@ The metrics that are exposed are:
   always be `received - (sent + dropped)`, but this gauge is maintained
   separately as a cross-check in case of bugs.
 
-* **`logstash_writer_last_sent_event_timestamp`** -- the UTC timestamp,
+* **`logstash_writer_last_sent_event_time_seconds`** -- the UTC timestamp,
   represented as the number of (fractional) seconds since the Unix epoch, at
   which the most recent event sent to a logstash server was originally
   submitted via `#send_event`.  This might require some unpacking.
@@ -133,7 +133,7 @@ The metrics that are exposed are:
 
   Firstly, if there are queued events, you can tell how far behind in real
   time your logstash event history is, by calculating `NOW() -
-  logstash_writer_last_sent_event_timestamp`.  Thus, if you're not finding
+  logstash_writer_last_sent_event_time_seconds`.  Thus, if you're not finding
   events in your Kibana dashboard you were expecting to see, you can tell
   that there's a clog in the pipes by looking at this.
 

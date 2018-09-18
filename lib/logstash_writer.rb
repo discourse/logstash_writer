@@ -79,7 +79,7 @@ class LogstashWriter
       queue_size:          metrics_registry.gauge(:"#{metrics_prefix}_queue_size", "The number of events currently in the queue to be sent"),
       dropped:             metrics_registry.counter(:"#{metrics_prefix}_events_dropped_total", "The number of events which have been dropped from the queue"),
 
-      lag:                 metrics_registry.gauge(:"#{metrics_prefix}_last_sent_event_timestamp", "When the last event successfully sent to logstash was originally received"),
+      lag:                 metrics_registry.gauge(:"#{metrics_prefix}_last_sent_event_time_seconds", "When the last event successfully sent to logstash was originally received"),
 
       connected:           metrics_registry.gauge(:"#{metrics_prefix}_connected_to_server", "Boolean flag indicating whether we are currently connected to a logstash server"),
       connect_exception:   metrics_registry.counter(:"#{metrics_prefix}_connect_exceptions_total", "The number of exceptions that have occurred whilst attempting to connect to a logstash server"),
