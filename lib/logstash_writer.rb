@@ -115,7 +115,7 @@ class LogstashWriter
     end
 
     unless e.has_key?(:@timestamp) || e.has_key?("@timestamp")
-      e[:@timestamp] = Time.now.utc.strftime("%FT%TZ")
+      e[:@timestamp] = Time.now.utc.strftime("%FT%T.%NZ")
     end
 
     unless e.has_key?(:_id) || e.has_key?("_id")

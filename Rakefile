@@ -40,4 +40,3 @@ Bundler::GemHelper.install_tasks
 task :release do
   sh "git release"
 end
-

@@ -149,7 +149,7 @@ describe LogstashWriter do
         expect { JSON.parse(msg) }.to_not raise_error
         raw_msg = JSON.parse(msg)
         expect(raw_msg["ohai"]).to eq("there")
-        expect(raw_msg["@timestamp"]).to match(/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\z/)
+        expect(raw_msg["@timestamp"]).to match(/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{9}Z\z/)
       end
 
       writer.run
