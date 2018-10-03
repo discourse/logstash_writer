@@ -243,6 +243,12 @@ class LogstashWriter
           end
         rescue StandardError => ex
           @logger.error("LogstashWriter") { (["Exception in write_loop: #{ex.message} (#{ex.class})"] + ex.backtrace).join("\n  ") }
+          # If there was some sort of error, there's a non-trivial chance the
+          # socket has gone *boom*, so let's invalidate it and go around again
+          if @current_socket
+            @current_socket.close
+            @current_socket = nil
+          end
           @queue_mutex.synchronize { @queue.unshift(event) if event }
           @metrics[:write_loop_exception].increment(class: ex.class.to_s)
           @metrics[:write_loop_ok].set({}, 0)
