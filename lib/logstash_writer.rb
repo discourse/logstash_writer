@@ -281,7 +281,6 @@ class LogstashWriter
       @socket_mutex.synchronize do
         if @current_socket
           begin
-            @logger.debug("LogstashWriter") { "Using current server #{describe_peer(@current_socket)}" }
             yield @current_socket
             @metrics[:connected].set({}, 1)
             done = true
