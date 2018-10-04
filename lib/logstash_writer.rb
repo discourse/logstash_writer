@@ -121,7 +121,7 @@ class LogstashWriter
     end
 
     if e.has_key?("@metadata")
-      e[:@metadata] = (e[:@metadata] || {}).merge(e["@metadata"])
+      e[:@metadata] = (e[:@metadata] || {}).merge(e.delete("@metadata"))
     end
 
     unless e.has_key?(:@metadata)

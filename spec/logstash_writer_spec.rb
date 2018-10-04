@@ -55,6 +55,13 @@ describe LogstashWriter do
       expect(writer.instance_variable_get(:@queue).first[:content][:@metadata]).to have_key(:_id)
     end
 
+    it "doesn't nuke an existing \"@metadata\" key" do
+      writer.send_event("@metadata" => { something: "funny" }, ohai: "there")
+
+      expect(writer.instance_variable_get(:@queue).first[:content]).to_not have_key("@metadata")
+      expect(writer.instance_variable_get(:@queue).first[:content][:@metadata][:something]).to eq("funny")
+    end
+
     context "when backlog overflows" do
       before(:each) { 5.times { |i| writer.send_event(ohai: "there no. #{i}") } }
 
