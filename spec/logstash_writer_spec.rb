@@ -49,7 +49,8 @@ describe LogstashWriter do
     it "adds a missing _id" do
       writer.send_event(ohai: "there")
 
-      expect(writer.instance_variable_get(:@queue).first[:content]).to have_key(:_id)
+      expect(writer.instance_variable_get(:@queue).first[:content]).to have_key(:@metadata)
+      expect(writer.instance_variable_get(:@queue).first[:content][:@metadata]).to have_key(:_id)
     end
 
     context "when backlog overflows" do
