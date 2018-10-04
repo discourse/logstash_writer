@@ -92,6 +92,8 @@ class LogstashWriter
     @metrics[:lag].set({}, 0)
     @metrics[:queue_size].set({}, 0)
 
+    metrics_registry.gauge(:"#{metrics_prefix}_queue_max", "The maximum size of the event queue").set({}, backlog)
+
     @queue = []
     @queue_mutex = Mutex.new
     @queue_cv    = ConditionVariable.new
