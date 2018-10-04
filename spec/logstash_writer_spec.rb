@@ -16,6 +16,7 @@ describe LogstashWriter do
     allow(TCPSocket).to receive(:new).and_return(mock_socket)
     allow(mock_socket).to receive(:close)
     allow(mock_socket).to receive(:peeraddr).and_return(["AF_INET", 5151, "192.0.2.42", "192.0.2.42"])
+    allow(mock_socket).to receive(:read_nonblock).with(1).and_return("")
   end
 
   describe '.new' do
@@ -181,6 +182,12 @@ describe LogstashWriter do
       expect { |b| writer.__send__(:current_target, &b) }.to yield_with_args(instance_of(LogstashWriter.const_get(:Target)))
     end
 
+    it "checks that the socket hasn't closed underneath us" do
+      expect(mock_socket).to receive(:read_nonblock).with(1)
+
+      writer.__send__(:current_target) { nil }
+    end
+
     it "logs and retries if the block raises a SystemCallError" do
       expect(writer).to receive(:sleep).with(0.5)
       expect_log_message(mock_logger, :info, /Error while writing.*EBADF/)
@@ -189,7 +196,15 @@ describe LogstashWriter do
       expect { writer.__send__(:current_target) { (do_err = false; raise Errno::EBADF) if do_err } }.to_not raise_error
     end
 
-    it "logs an error and tries again if the connection fails" do
+    it "logs and retries if the block raises an IOError" do
+      expect(writer).to receive(:sleep).with(0.5)
+      expect_log_message(mock_logger, :info, /Error while writing.*EOFError/)
+
+      do_err = true
+      expect { writer.__send__(:current_target) { (do_err = false; raise EOFError) if do_err } }.to_not raise_error
+    end
+
+    it "logs an error and tries again if the connection fails with a SystemCallError" do
       expect(TCPSocket).to receive(:new).with("192.0.2.1", 5151).and_raise(Errno::ENOSTR)
       expect(TCPSocket).to receive(:new).with("192.0.2.1", 5151).and_return(mock_socket)
       allow(writer).to receive(:sleep)
