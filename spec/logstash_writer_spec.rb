@@ -1,5 +1,7 @@
 require_relative './spec_helper'
 
+require 'logger'
+
 require 'logstash_writer'
 
 describe LogstashWriter do

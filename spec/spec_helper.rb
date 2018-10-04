@@ -18,11 +18,8 @@ RSpec.configure do |config|
   end
 end
 
-require_relative './matcher_methods'
-require_relative './example_group_methods'
 require_relative './example_methods'
 
 RSpec.configure do |config|
   config.include ExampleMethods
-  config.extend  ExampleGroupMethods
 end
