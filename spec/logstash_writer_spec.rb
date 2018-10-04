@@ -6,6 +6,7 @@ require 'logstash_writer'
 
 describe LogstashWriter do
   let(:mock_socket) { double(TCPSocket) }
+  let(:mock_target) { double(LogstashWriter.const_get(:Target)) }
   let(:mock_logger) { double(Logger) }
   let(:writer) { LogstashWriter.new(server_name: "192.0.2.1:5151", backlog: 3, logger: mock_logger) }
 
@@ -13,8 +14,8 @@ describe LogstashWriter do
     allow(mock_logger).to receive(:debug)
     allow(mock_logger).to receive(:error) { |p, &m| puts "#{p}: #{m.call}" }
     allow(TCPSocket).to receive(:new).and_return(mock_socket)
-    allow(mock_socket).to receive(:peeraddr).and_return(["AF_INET", 5151, "192.0.2.42", "192.0.2.42"])
     allow(mock_socket).to receive(:close)
+    allow(mock_socket).to receive(:peeraddr).and_return(["AF_INET", 5151, "192.0.2.42", "192.0.2.42"])
   end
 
   describe '.new' do
@@ -112,8 +113,8 @@ describe LogstashWriter do
 
     it "closes the current socket" do
       writer.run
-      writer.instance_variable_set(:@current_socket, mock_socket)
-      expect(mock_socket).to receive(:close)
+      writer.instance_variable_set(:@current_target, mock_target)
+      expect(mock_target).to receive(:close)
 
       writer.stop
     end
@@ -127,16 +128,17 @@ describe LogstashWriter do
     end
 
     it "disconnects if connected" do
-      writer.instance_variable_set(:@current_socket, mock_socket)
+      writer.instance_variable_set(:@current_target, mock_target)
+      allow(mock_target).to receive(:describe_peer).and_return("sometargetaddr")
       expect(mock_logger).to receive(:info) do |progname, &msg|
         expect(progname).to eq("LogstashWriter")
-        expect(msg.call).to match(/disconnect/i)
+        expect(msg.call).to match(/disconnect.*sometargetaddr/i)
       end
-      expect(mock_socket).to receive(:close)
+      expect(mock_target).to receive(:close)
 
       writer.force_disconnect!
 
-      expect(writer.instance_variable_get(:@current_socket)).to be_nil
+      expect(writer.instance_variable_get(:@current_target)).to be_nil
     end
   end
 
@@ -159,8 +161,8 @@ describe LogstashWriter do
     end
 
     it "logs an error and pauses if an exception occurs" do
-      expect(writer).to receive(:current_socket).and_raise(RuntimeError).once
-      expect(writer).to receive(:current_socket).and_call_original
+      expect(writer).to receive(:current_target).and_raise(RuntimeError).once
+      expect(writer).to receive(:current_target).and_call_original
 
       expect_log_message(mock_logger, :error, /Exception in write_loop.*RuntimeError/)
       expect(writer).to receive(:sleep).with(0.5)
@@ -174,9 +176,9 @@ describe LogstashWriter do
     end
   end
 
-  describe "#current_socket" do
-    it "yields a socket" do
-      expect { |b| writer.__send__(:current_socket, &b) }.to yield_with_args(mock_socket)
+  describe "#current_target" do
+    it "yields a Target object" do
+      expect { |b| writer.__send__(:current_target, &b) }.to yield_with_args(instance_of(LogstashWriter.const_get(:Target)))
     end
 
     it "logs and retries if the block raises a SystemCallError" do
@@ -184,7 +186,7 @@ describe LogstashWriter do
       expect_log_message(mock_logger, :info, /Error while writing.*EBADF/)
 
       do_err = true
-      expect { writer.__send__(:current_socket) { (do_err = false; raise Errno::EBADF) if do_err } }.to_not raise_error
+      expect { writer.__send__(:current_target) { (do_err = false; raise Errno::EBADF) if do_err } }.to_not raise_error
     end
 
     it "logs an error and tries again if the connection fails" do
@@ -193,7 +195,7 @@ describe LogstashWriter do
       allow(writer).to receive(:sleep)
       expect_log_message(mock_logger, :error, /Failed to connect.*ENOSTR/)
 
-      writer.__send__(:current_socket) { nil }
+      writer.__send__(:current_target) { nil }
     end
 
     it "waits a little while if no candidate servers were found" do
@@ -201,21 +203,7 @@ describe LogstashWriter do
       expect(writer).to receive(:sleep).with(5).ordered
       expect(writer).to receive(:resolve_server_name).and_call_original.ordered
 
-      writer.__send__(:current_socket) { nil }
-    end
-  end
-
-  describe "#describe_peer" do
-    it "describes an IPv4 peer" do
-      expect(mock_socket).to receive(:peeraddr).and_return(["AF_INET", 80, "192.0.2.42", "192.0.2.42"])
-
-      expect(writer.__send__(:describe_peer, mock_socket)).to eq("192.0.2.42:80")
-    end
-
-    it "describes an IPv6 peer" do
-      expect(mock_socket).to receive(:peeraddr).and_return(["AF_INET6", 12345, "2001:db8::42", "2001:db8::42"])
-
-      expect(writer.__send__(:describe_peer, mock_socket)).to eq("[2001:db8::42]:12345")
+      writer.__send__(:current_target) { nil }
     end
   end
 
@@ -322,6 +310,124 @@ describe LogstashWriter do
       expect_log_message(mock_logger, :warn, /No SRV records found.*logstash._tcp/)
 
       expect(writer.__send__(:resolve_server_name)).to eq([])
+    end
+  end
+end
+
+describe "LogstashWriter::Target" do
+  let(:klass) { LogstashWriter.const_get(:Target) }
+  let(:mock_socket) { instance_double(TCPSocket) }
+
+  before(:each) do
+    allow(TCPSocket).to receive(:new).and_return(mock_socket)
+    allow(mock_socket).to receive(:close)
+  end
+
+  describe "#to_s" do
+    context "an IPv4 target" do
+      let(:target) { klass.new("192.0.2.123", 5151) }
+
+      it "returns the addr/port" do
+        expect(target.to_s).to eq("192.0.2.123:5151")
+      end
+    end
+
+    context "an IPv6 target" do
+      let(:target) { klass.new("2001:db8::123", 5151) }
+
+      it "returns the addr/port" do
+        expect(target.to_s).to eq("2001:db8::123:5151")
+      end
+    end
+  end
+
+  describe "#describe_peer" do
+    context "an IPv4 peer" do
+      let(:target) { klass.new("192.0.2.123", 5151) }
+
+      it "falls back to the string if there's no peer" do
+        expect(target.describe_peer).to eq(target.to_s)
+      end
+
+      it "returns the peeraddr if there's a socket" do
+        expect(mock_socket).to receive(:peeraddr).and_return(["AF_INET", 5151, "192.0.2.42", "192.0.2.42"])
+        # Get the socket prepped
+        target.socket
+
+        expect(target.describe_peer).to eq("192.0.2.42:5151")
+      end
+
+      it "caches the peeraddr after the first request" do
+        expect(mock_socket).to receive(:peeraddr).and_return(["AF_INET", 5151, "192.0.2.42", "192.0.2.42"]).exactly(:once)
+        # Get the socket prepped
+        target.socket
+        # Initial read
+        target.describe_peer
+
+        # Now the real test
+        expect(target.describe_peer).to eq("192.0.2.42:5151")
+      end
+
+      it "clears the peeraddr cache after close" do
+        expect(mock_socket).to receive(:peeraddr).and_return(["AF_INET", 5151, "192.0.2.42", "192.0.2.42"]).exactly(:once)
+        target.socket
+        expect(target.describe_peer).to eq("192.0.2.42:5151")
+
+        target.close
+
+        expect(target.describe_peer).to eq("192.0.2.123:5151")
+      end
+
+      it "falls back to the string if the peer is perma-disconnected" do
+        expect(mock_socket).to receive(:peeraddr).and_raise(Errno::ENOTCONN)
+        target.socket
+
+        expect(target.describe_peer).to eq("192.0.2.123:5151")
+      end
+    end
+
+    context "an IPv6 peer" do
+      let(:target) { klass.new("2001:db8::123", 5151) }
+
+      it "falls back to the string if there's no peer" do
+        expect(target.describe_peer).to eq(target.to_s)
+      end
+
+      it "returns the peeraddr if there's a socket" do
+        expect(mock_socket).to receive(:peeraddr).and_return(["AF_INET6", 5151, "2001:db8::42", "2001:db8::42"])
+        # Get the socket prepped
+        target.socket
+
+        expect(target.describe_peer).to eq("[2001:db8::42]:5151")
+      end
+
+      it "caches the peeraddr after the first request" do
+        expect(mock_socket).to receive(:peeraddr).and_return(["AF_INET6", 5151, "2001:db8::42", "2001:db8::42"]).exactly(:once)
+        # Get the socket prepped
+        target.socket
+        # Initial read
+        target.describe_peer
+
+        # Now the real test
+        expect(target.describe_peer).to eq("[2001:db8::42]:5151")
+      end
+
+      it "clears the peeraddr cache after close" do
+        expect(mock_socket).to receive(:peeraddr).and_return(["AF_INET6", 5151, "2001:db8::42", "2001:db8::42"]).exactly(:once)
+        target.socket
+        expect(target.describe_peer).to eq("[2001:db8::42]:5151")
+
+        target.close
+
+        expect(target.describe_peer).to eq("2001:db8::123:5151")
+      end
+
+      it "falls back to the string if the peer is perma-disconnected" do
+        expect(mock_socket).to receive(:peeraddr).and_raise(Errno::ENOTCONN)
+        target.socket
+
+        expect(target.describe_peer).to eq("2001:db8::123:5151")
+      end
     end
   end
 end

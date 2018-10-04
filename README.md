@@ -146,9 +146,9 @@ The metrics that are exposed are:
 
 * **`logstash_writer_connected_to_server`** -- this flag timeseries (can be
   either `1` or `0`) is simply a way for you to quickly determine whether
-  the writer has a server to talk to, if it wants one.  That is, this time
-  series will only be `0` if there's an event to write but no logstash
-  server can be found to write it to.
+  the writer has a server to talk to, if it wants one, and which server it
+  is connected to.  That is, this time series will only be `0` if there's an
+  event to write but no logstash server can be found to write it to.
 
 * **`logstash_writer_connect_exceptions_total`** -- a count of exceptions
   raised whilst attempting to connect to a logstash server, labelled by the
