@@ -16,7 +16,9 @@ describe LogstashWriter do
     allow(TCPSocket).to receive(:new).and_return(mock_socket)
     allow(mock_socket).to receive(:close)
     allow(mock_socket).to receive(:peeraddr).and_return(["AF_INET", 5151, "192.0.2.42", "192.0.2.42"])
-    allow(mock_socket).to receive(:read_nonblock).with(1).and_return("")
+    # This is only necessary because if we try to pass a mock socket into the
+    # real select, it raises an epic hissy-fit
+    allow(IO).to receive(:select).and_return(nil)
   end
 
   describe '.new' do
@@ -184,7 +186,15 @@ describe LogstashWriter do
     end
 
     it "checks that the socket hasn't closed underneath us" do
-      expect(mock_socket).to receive(:read_nonblock).with(1)
+      expect(IO).to receive(:select).with([mock_socket], [], [], 0).and_return(nil)
+
+      writer.__send__(:current_target) { nil }
+    end
+
+    it "recycles with an error if the socket has closed underneath us" do
+      expect(IO).to receive(:select).with([mock_socket], [], [], 0).and_return([[mock_socket], [], []])
+      expect(writer).to receive(:sleep).with(0.5)
+      expect_log_message(mock_logger, :info, /Error while writing.*ENOTCONN/)
 
       writer.__send__(:current_target) { nil }
     end
@@ -195,14 +205,6 @@ describe LogstashWriter do
 
       do_err = true
       expect { writer.__send__(:current_target) { (do_err = false; raise Errno::EBADF) if do_err } }.to_not raise_error
-    end
-
-    it "logs and retries if the block raises an IOError" do
-      expect(writer).to receive(:sleep).with(0.5)
-      expect_log_message(mock_logger, :info, /Error while writing.*EOFError/)
-
-      do_err = true
-      expect { writer.__send__(:current_target) { (do_err = false; raise EOFError) if do_err } }.to_not raise_error
     end
 
     it "logs an error and tries again if the connection fails with a SystemCallError" do
