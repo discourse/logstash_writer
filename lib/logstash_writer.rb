@@ -328,6 +328,7 @@ class LogstashWriter
                 @current_target = next_server
                 # Trigger a connection attempt
                 @current_target.socket
+                @logger.info("LogstashWriter") { "Connected to #{@current_target.describe_peer}" }
               else
                 @logger.debug("LogstashWriter") { "Could not connect to any server; pausing before trying again" }
                 @current_target = nil
