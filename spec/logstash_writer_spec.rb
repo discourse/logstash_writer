@@ -12,6 +12,7 @@ describe LogstashWriter do
 
   before(:each) do
     allow(mock_logger).to receive(:debug)
+    allow(mock_logger).to receive(:info)
     allow(mock_logger).to receive(:error) { |p, &m| puts "#{p}: #{m.call}" }
     allow(TCPSocket).to receive(:new).and_return(mock_socket)
     allow(mock_socket).to receive(:close)
@@ -46,20 +47,6 @@ describe LogstashWriter do
       writer.send_event(ohai: "there")
 
       expect(writer.instance_variable_get(:@queue).first[:content]).to have_key(:@timestamp)
-    end
-
-    it "adds a missing @metadata._id" do
-      writer.send_event(ohai: "there")
-
-      expect(writer.instance_variable_get(:@queue).first[:content]).to have_key(:@metadata)
-      expect(writer.instance_variable_get(:@queue).first[:content][:@metadata]).to have_key(:_id)
-    end
-
-    it "doesn't nuke an existing \"@metadata\" key" do
-      writer.send_event("@metadata" => { something: "funny" }, ohai: "there")
-
-      expect(writer.instance_variable_get(:@queue).first[:content]).to_not have_key("@metadata")
-      expect(writer.instance_variable_get(:@queue).first[:content][:@metadata][:something]).to eq("funny")
     end
 
     context "when backlog overflows" do
@@ -201,14 +188,14 @@ describe LogstashWriter do
     it "recycles with an error if the socket has closed underneath us" do
       expect(IO).to receive(:select).with([mock_socket], [], [], 0).and_return([[mock_socket], [], []])
       expect(writer).to receive(:sleep).with(0.5)
-      expect_log_message(mock_logger, :info, /Error while writing.*ENOTCONN/)
+      expect_log_message(mock_logger, :error, /Error while writing.*ENOTCONN/)
 
       writer.__send__(:current_target) { nil }
     end
 
     it "logs and retries if the block raises a SystemCallError" do
       expect(writer).to receive(:sleep).with(0.5)
-      expect_log_message(mock_logger, :info, /Error while writing.*EBADF/)
+      expect_log_message(mock_logger, :error, /Error while writing.*EBADF/)
 
       do_err = true
       expect { writer.__send__(:current_target) { (do_err = false; raise Errno::EBADF) if do_err } }.to_not raise_error

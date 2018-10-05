@@ -8,8 +8,8 @@ require 'prometheus/client'
 #
 # Flings events, represented as JSON objects, to logstash using the
 # `json_lines` codec (over TCP).  Doesn't do any munging or modification of
-# the event data given to it, other than adding `@timestamp` and
-# `[@metadata][_id]` fields if they do not already exist.
+# the event data given to it, other than adding a `@timestamp` field if
+# it doesn't already exist.
 #
 # We support highly-available logstash installations by means of multiple
 # address records, or via SRV records.  See the docs for .new for details
@@ -104,8 +104,8 @@ class LogstashWriter
 
   # Add an event to the queue, to be sent to logstash.  Actual event
   # delivery will happen in a worker thread that is started with
-  # #run.  If the event does not have a `@timestamp` or `[@metadata][_id]`
-  # element, they will be added with appropriate values.
+  # #run.  If the event does not have a `@timestamp` field, it will
+  # be added set to the current time.
   #
   # @param e [Hash] the event data to be sent.
   #
@@ -118,22 +118,6 @@ class LogstashWriter
 
     unless e.has_key?(:@timestamp) || e.has_key?("@timestamp")
       e[:@timestamp] = Time.now.utc.strftime("%FT%T.%NZ")
-    end
-
-    if e.has_key?("@metadata")
-      e[:@metadata] = (e[:@metadata] || {}).merge(e.delete("@metadata"))
-    end
-
-    unless e.has_key?(:@metadata)
-      e[:@metadata] = {}
-    end
-
-    unless e[:@metadata].has_key?(:_id) || e.has_key?("_id")
-      # This is the quickest way I've found to get a long, random string.
-      # We don't need any sort of cryptographic or unpredictability
-      # guarantees for what we're doing here, so SecureRandom is unnecessary
-      # overhead.
-      e[:@metadata][:_id] = rand(0x1000_0000_0000_0000_0000_0000_0000_0000).to_s(36)
     end
 
     @queue_mutex.synchronize do
@@ -303,7 +287,7 @@ class LogstashWriter
             # server and recycle
             @metrics[:write_exception].increment(server: @current_target.describe_peer, class: ex.class.to_s)
             @metrics[:connected].set({ server: @current_target.describe_peer }, 0)
-            @logger.info("LogstashWriter") { "Error while writing to current server #{@current_target.describe_peer}: #{ex.message} (#{ex.class})" }
+            @logger.error("LogstashWriter") { "Error while writing to current server #{@current_target.describe_peer}: #{ex.message} (#{ex.class})" }
             @current_target.close
             @current_target = nil
 
