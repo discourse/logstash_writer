@@ -42,13 +42,13 @@ describe LogstashWriter do
       expect { writer.send_event([{ ohai: "there" }, { something: "funny" }]) }.to raise_error(ArgumentError)
     end
 
-    it "adds a missing timestamp" do
+    it "adds a missing @timestamp" do
       writer.send_event(ohai: "there")
 
       expect(writer.instance_variable_get(:@queue).first[:content]).to have_key(:@timestamp)
     end
 
-    it "adds a missing _id" do
+    it "adds a missing @metadata._id" do
       writer.send_event(ohai: "there")
 
       expect(writer.instance_variable_get(:@queue).first[:content]).to have_key(:@metadata)
