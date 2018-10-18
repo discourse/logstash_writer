@@ -94,7 +94,9 @@ class LogstashWriter
 
     metrics_registry.gauge(:"#{metrics_prefix}_queue_max", "The maximum size of the event queue").set({}, backlog)
 
-    @queue = []
+    # We can't use a stdlib Queue object because we need to re-push items
+    # onto the front of the queue in case of error
+    @queue       = []
     @queue_mutex = Mutex.new
     @queue_cv    = ConditionVariable.new
 
@@ -144,12 +146,10 @@ class LogstashWriter
   def run
     @worker_mutex.synchronize do
       if @worker_thread.nil?
-        m, cv = Mutex.new, ConditionVariable.new
-
-        @worker_thread = Thread.new { cv.signal; write_loop }
-
-        # Don't return until the thread has *actually* started
-        m.synchronize { cv.wait(m) }
+        @worker_thread = Thread.new do
+          Thread.current.name = "LogstashWriter"
+          write_loop
+        end
       end
     end
 
