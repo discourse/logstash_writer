@@ -8,7 +8,9 @@ SimpleCov.start do
   add_filter('spec')
 end
 
-Thread.report_on_exception = false
+if Thread.respond_to?(:report_on_exception)
+  Thread.report_on_exception = false
+end
 
 RSpec.configure do |config|
   config.order = :random
