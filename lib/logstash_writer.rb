@@ -136,6 +136,33 @@ class LogstashWriter
     nil
   end
 
+  # Send events.
+  #
+  # Does not return until `#shutdown` is called (in another thread).
+  #
+  def run
+    @queue_mutex.synchronize do
+      @terminate = false
+    end
+
+    write_loop
+  end
+
+  # Tell the LogstashWriter to flush its queue and terminate operation.
+  #
+  # Returns immediately.
+  #
+  def shutdown
+    #:nocov:
+    @worker_mutex.synchronize do
+      @queue_mutex.synchronize do
+        @terminate = true
+        @queue_cv.signal
+      end
+    end
+    #:nocov:
+  end
+
   # Start sending events.
   #
   # This method will return almost immediately, and actual event
@@ -143,11 +170,14 @@ class LogstashWriter
   #
   # @return [NilClass]
   #
-  def run
+  def start!
     @worker_mutex.synchronize do
       if @worker_thread.nil?
+        @queue_mutex.synchronize do
+          @terminate = false
+        end
+
         @worker_thread = Thread.new do
-          Thread.current.name = "LogstashWriter"
           write_loop
         end
       end
@@ -164,18 +194,19 @@ class LogstashWriter
   #
   # @return [NilClass]
   #
-  def stop
+  def stop!
     @worker_mutex.synchronize do
       if @worker_thread
-        @terminate = true
-        @queue_cv.signal
+        @queue_mutex.synchronize do
+          @terminate = true
+          @queue_cv.signal
+        end
         begin
-          @worker_thread.join
+          @worker_thread.join unless @worker_thread == Thread.current
         rescue Exception => ex
           @logger.error("LogstashWriter") { (["Worker thread terminated with exception: #{ex.message} (#{ex.class})"] + ex.backtrace).join("\n  ") }
         end
         @worker_thread = nil
-        @socket_mutex.synchronize { (@current_target.close; @current_target = nil) if @current_target }
       end
     end
 
@@ -210,45 +241,43 @@ class LogstashWriter
   #
   def write_loop
     error_wait = INITIAL_RETRY_WAIT
+    Thread.current.name = "LogstashWriter"
 
-    catch :terminate do
-      loop do
-        event = nil
+    until @terminate do
+      event = nil
 
-        begin
-          @queue_mutex.synchronize do
-            while @queue.empty? && !@terminate
-              @queue_cv.wait(@queue_mutex)
-            end
-
-            if @queue.empty? && @terminate
-              @terminate = false
-              throw :terminate
-            end
-
-            event = @queue.shift
+      begin
+        @queue_mutex.synchronize do
+          while @queue.empty? && !@terminate
+            @queue_cv.wait(@queue_mutex)
           end
 
+          event = @queue.shift
+        end
+
+        if event
           current_target do |t|
             t.socket.puts event[:content].to_json
             stat_sent(t.to_s, event[:arrival_timestamp])
             @metrics[:write_loop_ok].set({}, 1)
             error_wait = INITIAL_RETRY_WAIT
           end
-        rescue StandardError => ex
-          @logger.error("LogstashWriter") { (["Exception in write_loop: #{ex.message} (#{ex.class})"] + ex.backtrace).join("\n  ") }
-          @queue_mutex.synchronize { @queue.unshift(event) if event }
-          @metrics[:write_loop_exception].increment(class: ex.class.to_s)
-          @metrics[:write_loop_ok].set({}, 0)
-          sleep error_wait
-          # Increase the error wait timeout for next time, up to a maximum
-          # interval of about 60 seconds
-          error_wait *= 1.1
-          error_wait = 60 if error_wait > 60
-          error_wait += rand / 0.5
         end
+      rescue StandardError => ex
+        @logger.error("LogstashWriter") { (["Exception in write_loop: #{ex.message} (#{ex.class})"] + ex.backtrace).join("\n  ") }
+        @queue_mutex.synchronize { @queue.unshift(event) if event }
+        @metrics[:write_loop_exception].increment(class: ex.class.to_s)
+        @metrics[:write_loop_ok].set({}, 0)
+        sleep error_wait
+        # Increase the error wait timeout for next time, up to a maximum
+        # interval of about 60 seconds
+        error_wait *= 1.1
+        error_wait = 60 if error_wait > 60
+        error_wait += rand / 0.5
       end
     end
+
+    force_disconnect!
   end
 
   # Yield a Target connected to the server we currently believe to be

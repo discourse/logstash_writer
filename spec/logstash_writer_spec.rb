@@ -64,33 +64,42 @@ describe LogstashWriter do
   end
 
   describe "#run" do
-    after(:each) { writer.stop }
+    it "fires off the write_loop, without starting a new thread" do
+      expect(Thread).to_not receive(:new)
+      expect(writer).to receive(:write_loop)
+
+      writer.run
+    end
+  end
+
+  describe "#start!" do
+    after(:each) { writer.stop! }
 
     it "starts the worker thread" do
-      writer.run
+      writer.start!
 
       expect(writer.instance_variable_get(:@worker_thread)).to_not be(nil)
     end
 
     it "Doesn't start multiple worker threads" do
-      writer.run
+      writer.start!
       wt = writer.instance_variable_get(:@worker_thread).object_id
-      writer.run
+      writer.start!
 
       expect(writer.instance_variable_get(:@worker_thread).object_id).to eq(wt)
     end
   end
 
-  describe "#stop" do
+  describe "#stop!" do
     it "does nothing if not already running" do
-      expect { writer.stop }.to_not raise_error
+      expect { writer.stop! }.to_not raise_error
     end
 
     it "terminates the worker thread" do
-      writer.run
+      writer.start!
       wt = writer.instance_variable_get(:@worker_thread)
 
-      expect { writer.stop }.to_not raise_error
+      expect { writer.stop! }.to_not raise_error
       expect(writer.instance_variable_get(:@worker_thread)).to be_nil
 
       expect(wt).to_not be_alive
@@ -99,22 +108,22 @@ describe LogstashWriter do
     it "logs the exception if the worker thread raised one" do
       expect(writer).to receive(:write_loop).and_raise(RuntimeError)
 
-      writer.run
+      writer.start!
 
       expect(mock_logger).to receive(:error) do |progname, &msg|
         expect(progname).to eq("LogstashWriter")
         expect(msg.call).to match(/Worker thread terminated.*RuntimeError/)
       end
 
-      expect { writer.stop }.to_not raise_error
+      expect { writer.stop! }.to_not raise_error
     end
 
     it "closes the current socket" do
-      writer.run
+      writer.start!
       writer.instance_variable_set(:@current_target, mock_target)
       expect(mock_target).to receive(:close)
 
-      writer.stop
+      writer.stop!
     end
   end
 
@@ -141,8 +150,6 @@ describe LogstashWriter do
   end
 
   describe "#write_loop" do
-    after(:each) { writer.stop }
-
     it "sends a message if there is one" do
       allow(mock_logger).to receive(:error) { |p, &m| puts "#{p}: #{m.call}" }
       writer.send_event(ohai: "there")
@@ -152,25 +159,26 @@ describe LogstashWriter do
         raw_msg = JSON.parse(msg)
         expect(raw_msg["ohai"]).to eq("there")
         expect(raw_msg["@timestamp"]).to match(/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{9}Z\z/)
+        writer.stop!
       end
 
-      writer.run
-      writer.stop
+      writer.start!
+      writer.instance_variable_get(:@worker_thread).join
     end
 
     it "logs an error and pauses if an exception occurs" do
       expect(writer).to receive(:current_target).and_raise(RuntimeError).once
-      expect(writer).to receive(:current_target).and_call_original
 
       expect_log_message(mock_logger, :error, /Exception in write_loop.*RuntimeError/)
       expect(writer).to receive(:sleep).with(0.5)
 
-      allow(mock_socket).to receive(:puts)
+      expect(writer).to receive(:current_target) { writer.stop! }
 
+      allow(mock_socket).to receive(:puts)
       writer.send_event(ohai: "there")
 
-      writer.run
-      writer.stop
+      writer.start!
+      writer.instance_variable_get(:@worker_thread).join
     end
   end
 

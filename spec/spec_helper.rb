@@ -8,6 +8,8 @@ SimpleCov.start do
   add_filter('spec')
 end
 
+Thread.report_on_exception = false
+
 RSpec.configure do |config|
   config.order = :random
   config.fail_fast = true
