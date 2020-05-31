@@ -3,7 +3,6 @@
 exec(*(["bundle", "exec", $PROGRAM_NAME] + ARGV)) if ENV['BUNDLE_GEMFILE'].nil?
 
 task default: :test
-task default: :rubocop
 task default: :doc_stats
 
 begin
@@ -15,10 +14,6 @@ rescue Bundler::BundlerError => e
 end
 
 require 'yard'
-
-task :rubocop do
-  sh "rubocop --fail-level R"
-end
 
 YARD::Rake::YardocTask.new :doc do |yardoc|
   yardoc.files = %w{lib/**/*.rb - README.md CONTRIBUTING.md CODE_OF_CONDUCT.md}
